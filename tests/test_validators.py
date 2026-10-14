@@ -182,3 +182,23 @@ def test_error_codes_are_the_seven_canonical_codes():
     assert ERROR_CODES == ISSUE_CODES
     assert WARNING_EAN_LENGTH not in ISSUE_CODES
     assert SEVERITY_ERROR == "error"
+
+@pytest.mark.parametrize(
+    "value",
+    ["\u00b2" * 13, "\uff11" * 13, "\u0661" * 13],
+    ids=["superscript", "fullwidth", "arabic-indic"],
+)
+def test_non_ascii_digit_eans_are_ean_format_not_a_crash(value):
+    assert codes(validate_ean(value)) == ["EAN_FORMAT"]
+    assert gs1_check_ok(value) is False
+    result = validate_row(make_row(2, value, "Tau vuong", "1"), set())
+    assert result.is_valid is False
+    assert codes(result.issues) == ["EAN_FORMAT"]
+
+
+def test_non_ascii_digits_are_excluded_from_duplicate_detection():
+    rows = [
+        make_row(2, "\uff11" * 13, "a", "1"),
+        make_row(3, "\uff11" * 13, "b", "1"),
+    ]
+    assert find_duplicates(rows) == set()

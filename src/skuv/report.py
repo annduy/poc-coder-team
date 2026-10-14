@@ -78,7 +78,10 @@ def _write_summary(results, path: Path) -> None:
     for result in results:
         for code in result.error_codes:
             counts[code] = counts.get(code, 0) + 1
-        warnings += result.warning_count
+        if result.is_valid:
+            # plan section 5 / default A1: the warnings line counts non-13-digit
+            # EANs on ACCEPTED rows only; a rejected row contributes none.
+            warnings += result.warning_count
 
     lines = ["total: " + str(total), "valid: " + str(valid), "invalid: " + str(invalid)]
     for code in ERROR_CODES:

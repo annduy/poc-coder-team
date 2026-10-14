@@ -70,11 +70,28 @@ class RowResult:
 
     @property
     def warning_count(self) -> int:
+        """Raw number of warning-severity issues on the row.
+
+        summary.txt counts only warnings of *valid* rows (plan section 5 and
+        default A1: warnings never invalidate a row and are never emitted as
+        problems), so the report writer filters on is_valid.
+        """
         return sum(1 for issue in self.issues if issue.severity == SEVERITY_WARNING)
 
 
 def _text(value: object) -> str:
     return "" if value is None else str(value)
+
+
+def _is_ascii_digits(value: str) -> bool:
+    """True only for ASCII 0-9.
+
+    str.isdigit() is also true for non-ASCII code points (superscripts such as
+    U+00B2, fullwidth or Arabic-Indic digits) that int() either rejects - which
+    used to crash the checksum path with ValueError - or reads as a different
+    value, so EAN handling is restricted to ASCII digits.
+    """
+    return value.isascii() and value.isdigit()
 
 
 def _issue_sort_key(issue: Issue) -> tuple[int, int]:
@@ -92,7 +109,7 @@ def gs1_check_ok(digits: str) -> bool:
     Walking left from the rightmost data digit the weights alternate 3,1,3,1...;
     the weighted data sum plus the check digit must be divisible by 10.
     """
-    if not digits or not digits.isdigit():
+    if not digits or not digits.isascii() or not digits.isdigit():
         return False
     weighted = 0
     for offset, char in enumerate(reversed(digits[:-1])):
@@ -101,9 +118,13 @@ def gs1_check_ok(digits: str) -> bool:
 
 
 def validate_ean(raw: object) -> list[Issue]:
-    """Return the EAN issues for one raw cell value."""
+    """Return the EAN issues for one raw cell value.
+
+    Only ASCII digits 0-9 are accepted; every other digit-like code point is an
+    EAN_FORMAT error (never a crash, never a checksum error).
+    """
     value = _text(raw).strip()
-    if not value.isdigit() or len(value) not in ACCEPTED_EAN_LENGTHS:
+    if not _is_ascii_digits(value) or len(value) not in ACCEPTED_EAN_LENGTHS:
         return [
             Issue(
                 "EAN_FORMAT",
@@ -132,7 +153,7 @@ def find_duplicates(rows) -> set[int]:
     duplicates: set[int] = set()
     for row in rows:
         ean = _text(getattr(row, "ean", "")).strip()
-        if not ean.isdigit() or len(ean) not in ACCEPTED_EAN_LENGTHS or not gs1_check_ok(ean):
+        if not _is_ascii_digits(ean) or len(ean) not in ACCEPTED_EAN_LENGTHS or not gs1_check_ok(ean):
             continue
         if ean in seen:
             duplicates.add(getattr(row, "lineno", None))

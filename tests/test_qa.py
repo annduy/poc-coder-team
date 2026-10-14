@@ -3,16 +3,17 @@
 Owner: tester. This module adds adversarial coverage on top of the
 implementer suite; no implementation file is modified.
 
-Two tests carry @pytest.mark.xfail(strict=True) because adversarial probing
-found genuine defects:
+Adversarial probing found two defects here; both are fixed in the
+implementation, so the tests below now run as regular passing tests:
 
-* QA-BUG-1 - Unicode code points that str.isdigit() accepts but int() rejects
-  (superscripts such as U+00B2) reach gs1_check_ok() and raise an uncaught
-  ValueError, so the CLI crashes instead of reporting EAN_FORMAT.
-* QA-BUG-2 - summary.txt "warnings" counts warning-severity issues on rows that
-  were rejected (8/12/14-digit EAN with a bad checksum), although docs/plan.md
-  section 5 and README say warnings counts non-13-digit EANs ACCEPTED with a
-  warning.
+* QA-BUG-1 (fixed) - Unicode code points that str.isdigit() accepts but int()
+  rejects (superscripts such as U+00B2) reached gs1_check_ok() and raised an
+  uncaught ValueError, so the CLI crashed instead of reporting EAN_FORMAT.
+  EAN handling now accepts ASCII digits 0-9 only.
+* QA-BUG-2 (fixed) - summary.txt "warnings" counted warning-severity issues on
+  rows that were rejected (8/12/14-digit EAN with a bad checksum), although
+  docs/plan.md section 5 and README say warnings counts non-13-digit EANs
+  ACCEPTED with a warning; the counter now counts valid rows only.
 """
 
 import csv
@@ -165,12 +166,10 @@ def test_ean_format_never_cascades_into_checksum():
         assert "EAN_CHECKSUM" not in codes(validate_ean(value))
 
 
-@pytest.mark.xfail(strict=True, reason="QA-BUG-1: unicode superscript digits make gs1_check_ok raise ValueError instead of EAN_FORMAT")
 def test_unicode_superscript_digits_report_ean_format_instead_of_crashing():
     assert codes(validate_ean("\u00b2" * 13)) == ["EAN_FORMAT"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-BUG-1: CLI crashes with an uncaught ValueError on a superscript-digit EAN instead of writing reports and exiting 1")
 def test_cli_survives_unicode_superscript_ean(tmp_path):
     source = write_text(tmp_path, "sup.csv", "ean,description,price\n" + "\u00b2" * 13 + ",Tau vuong,1\n")
     outdir = tmp_path / "out"
@@ -410,7 +409,6 @@ def test_unknown_extension_is_an_input_error(tmp_path):
 
 
 # -------------------------------------------------------------- summary file
-@pytest.mark.xfail(strict=True, reason="QA-BUG-2: warnings counts the non-13-digit warning of a rejected row (plan section 5 / README say warnings counts non-13-digit EANs ACCEPTED with a warning)")
 def test_summary_warnings_only_count_accepted_rows(tmp_path):
     source = write_text(tmp_path, "bad8.csv", "ean,description,price\n12345678,Sua tam,100\n")
     outdir = tmp_path / "out"
