@@ -40,6 +40,12 @@ DESC_MAX_LENGTH = 200
 
 PRICE_PATTERN = re.compile(r"^[0-9]+([.,][0-9]+)?$")
 
+#: A dot/comma followed by exactly three digits, e.g. "10,000" or "1.000".
+#: Read as a decimal point this would silently divide the price by 1000, so such
+#: values are rejected as probable thousands separators (default A4 corrected
+#: after review: data correctness first).
+PROBABLE_THOUSANDS_PATTERN = re.compile(r"^[0-9]{1,3}([,.][0-9]{3})+$")
+
 
 @dataclass(frozen=True)
 class Issue:
@@ -184,12 +190,22 @@ def validate_description(raw: object) -> list[Issue]:
 
 
 def parse_price(raw: object) -> tuple[Decimal | None, Issue | None]:
-    """Parse an optional price. Returns (value, issue); both empty when blank."""
+    """Parse an optional price. Returns (value, issue); both empty when blank.
+
+    "." or "," is the decimal separator only; a separator followed by exactly
+    three digits (e.g. "10,000") is rejected as a probable thousands separator.
+    """
     value = _text(raw).strip()
     if not value:
         return None, None
     if not PRICE_PATTERN.match(value):
         return None, Issue("PRICE_BAD", SEVERITY_ERROR, "price must be a non-negative number: " + repr(value))
+    if PROBABLE_THOUSANDS_PATTERN.match(value):
+        return None, Issue(
+            "PRICE_BAD",
+            SEVERITY_ERROR,
+            "price looks like a thousands separator rather than a decimal point: " + repr(value),
+        )
     try:
         return Decimal(value.replace(",", ".")), None
     except InvalidOperation:  # pragma: no cover - guarded by PRICE_PATTERN

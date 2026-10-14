@@ -86,7 +86,8 @@ def build_xlsx(path, rows):
 
 
 def read_csv_rows(path):
-    with open(path, "r", encoding="utf-8", newline="") as handle:
+    # Reports are written as utf-8-sig; utf-8-sig also reads plain UTF-8.
+    with open(path, "r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.reader(handle))
 
 
@@ -296,13 +297,16 @@ def test_price_rejects_negatives_exponents_symbols_and_separators(value):
     assert issue is not None and issue.code == "PRICE_BAD"
 
 
-def test_price_comma_is_a_decimal_separator_not_a_thousands_separator():
-    # Documented ambiguity: the grammar treats a lone comma as a decimal point,
-    # so "10,000" normalizes to 10 rather than being rejected as thousands.
-    parsed, issue = parse_price("10,000")
-    assert issue is None
-    assert parsed == Decimal("10")
-    assert format_price(parsed) == "10"
+def test_price_three_digit_groups_are_probable_thousands_separators():
+    # Corrected after review (orchestrator decision, data correctness first): a
+    # separator followed by exactly three digits is read as a thousands
+    # separator and rejected, instead of silently dividing the price by 1000.
+    for value in ("10,000", "1.000", "1,000", "10.000.000"):
+        parsed, issue = parse_price(value)
+        assert parsed is None, value
+        assert issue is not None and issue.code == "PRICE_BAD", value
+    assert parse_price("12000,50") == (Decimal("12000.5"), None)
+    assert parse_price("10.5") == (Decimal("10.5"), None)
 
 
 def test_price_huge_value_survives_without_float_loss():

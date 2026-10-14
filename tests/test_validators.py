@@ -202,3 +202,23 @@ def test_non_ascii_digits_are_excluded_from_duplicate_detection():
         make_row(3, "\uff11" * 13, "b", "1"),
     ]
     assert find_duplicates(rows) == set()
+
+
+
+@pytest.mark.parametrize("value", ["10,000", "1.000", "1,000", "10.000.000", "1,000,000"])
+def test_probable_thousands_separator_prices_are_rejected(value):
+    parsed, issue = parse_price(value)
+    assert parsed is None
+    assert issue is not None
+    assert issue.code == "PRICE_BAD"
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [("12000,50", Decimal("12000.5")), ("12000.50", Decimal("12000.5")), ("10.5", Decimal("10.5"))],
+)
+def test_decimal_separator_prices_still_parse(value, expected):
+    parsed, issue = parse_price(value)
+    assert issue is None
+    assert parsed == expected
+    assert format_price(parsed) != ""

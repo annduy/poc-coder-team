@@ -14,6 +14,10 @@ SUMMARY_FILENAME = "summary.txt"
 VALIDATED_HEADER = ("ean", "description", "price")
 ERRORS_HEADER = ("ean", "description", "price", "problems")
 
+#: CSV reports carry a BOM so Excel (and VN-locale tools) open them correctly.
+CSV_ENCODING = "utf-8-sig"
+SUMMARY_ENCODING = "utf-8"
+
 _CODE_ORDER = {code: index for index, code in enumerate(ERROR_CODES)}
 
 
@@ -28,7 +32,7 @@ def write_reports(row_results, outdir) -> None:
 
 
 def _write_csv(path: Path, header, rows) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    with path.open("w", encoding=CSV_ENCODING, newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(list(header))
         writer.writerows(rows)
@@ -88,4 +92,4 @@ def _write_summary(results, path: Path) -> None:
         if counts.get(code):
             lines.append(code + ": " + str(counts[code]))
     lines.append("warnings: " + str(warnings))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding=SUMMARY_ENCODING)

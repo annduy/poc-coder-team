@@ -117,6 +117,8 @@ def _read_csv(path: Path) -> list[tuple[int, dict[str, str]]]:
         raise InputError("cannot decode " + str(path) + " as UTF-8: " + str(exc)) from exc
     except csv.Error as exc:
         raise InputError("cannot parse csv file " + str(path) + ": " + str(exc)) from exc
+    except OSError as exc:
+        raise InputError("cannot read " + str(path) + ": " + str(exc)) from exc
     return records
 
 

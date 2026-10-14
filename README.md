@@ -35,6 +35,10 @@ Headers are matched case-insensitively and extra columns are ignored. `ean` and
 `description` are required; `price` is optional. Rows whose three known fields
 are all blank are skipped. A UTF-8 byte-order mark is tolerated in CSV files.
 
+Prices use `.` or `,` as the decimal separator; a separator followed by exactly
+three digits (e.g. `10,000` or `1.000`) is rejected as a probable thousands
+separator (`PRICE_BAD`).
+
 ### Outputs (out/)
 
 - `validated.csv` - `ean,description,price` for every row without an error, with
@@ -44,7 +48,9 @@ are all blank are skipped. A UTF-8 byte-order mark is tolerated in CSV files.
 - `summary.txt` - `total`, `valid`, `invalid`, the per-code error counts, and the
   number of non-13-digit EANs accepted with a warning.
 
-Existing files are overwritten silently on every run.
+Existing files are overwritten silently on every run. `validated.csv` and
+`errors.csv` are written as UTF-8 with a BOM (`utf-8-sig`, Excel-friendly);
+`summary.txt` is plain UTF-8.
 
 ### Issue codes
 

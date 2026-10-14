@@ -55,7 +55,7 @@ EXPECTED_PROBLEMS = [
 
 
 def read_csv_rows(path: Path):
-    with path.open("r", encoding="utf-8", newline="") as handle:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.reader(handle))
 
 
@@ -163,12 +163,12 @@ def test_outdir_is_created_and_overwritten_silently(tmp_path):
     source = write_csv(tmp_path, SIMPLE_CSV)
     outdir = tmp_path / "nested" / "out"
     assert main([str(source), "-o", str(outdir)]) == 0
-    first = (outdir / "validated.csv").read_text(encoding="utf-8")
+    first = (outdir / "validated.csv").read_text(encoding="utf-8-sig")
     (outdir / "summary.txt").write_text("stale", encoding="utf-8")
 
     assert main([str(source), "-o", str(outdir)]) == 0
     assert (outdir / "summary.txt").read_text(encoding="utf-8") == SIMPLE_SUMMARY
-    assert (outdir / "validated.csv").read_text(encoding="utf-8") == first
+    assert (outdir / "validated.csv").read_text(encoding="utf-8-sig") == first
 
 
 def test_default_outdir_is_out(tmp_path, monkeypatch):
@@ -193,3 +193,54 @@ def test_subprocess_writes_reports(tmp_path):
     proc = run_module([str(SAMPLE_CSV), "-o", str(tmp_path / "out")], tmp_path)
     assert proc.returncode == 1, proc.stderr
     assert (tmp_path / "out" / "errors.csv").is_file()
+
+
+# ------------------------------------------------ unreadable input file (S1)
+def test_unreadable_input_exits_two_without_reports(tmp_path, capsys):
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses file permissions")
+    source = write_csv(tmp_path, SIMPLE_CSV)
+    os.chmod(source, 0o000)
+    outdir = tmp_path / "out"
+    try:
+        assert main([str(source), "-o", str(outdir)]) == 2
+        assert "skuv: error:" in capsys.readouterr().err
+        assert not outdir.exists()
+    finally:
+        os.chmod(source, 0o600)
+
+
+def test_unreadable_input_has_no_traceback_in_subprocess(tmp_path):
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses file permissions")
+    source = write_csv(tmp_path, SIMPLE_CSV)
+    os.chmod(source, 0o000)
+    try:
+        proc = run_module([str(source), "-o", str(tmp_path / "out")], tmp_path)
+    finally:
+        os.chmod(source, 0o600)
+    assert proc.returncode == 2
+    assert "Traceback" not in proc.stderr
+    assert "skuv: error:" in proc.stderr
+
+
+# ------------------------------------------------------- output encoding (S3)
+def test_output_csv_is_utf8_sig_and_round_trips_diacritics(tmp_path):
+    description = "S\u1eefa t\u1eafm d\u01b0\u1ee1ng \u1ea9m"
+    source = write_csv(
+        tmp_path,
+        "ean,description,price\n5901234123457," + description + ",120000\n",
+    )
+    outdir = tmp_path / "out"
+    assert main([str(source), "-o", str(outdir)]) == 0
+
+    raw = (outdir / "validated.csv").read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert description.encode("utf-8") in raw
+    assert (outdir / "errors.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+
+    with (outdir / "validated.csv").open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[1] == ["5901234123457", description, "120000"]
+
+    assert not (outdir / "summary.txt").read_bytes().startswith(b"\xef\xbb\xbf")

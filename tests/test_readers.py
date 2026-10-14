@@ -1,5 +1,6 @@
 """Reader tests: header mapping, normalization, csv/xlsx parity (spec R1)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,16 @@ def test_ragged_row_becomes_empty_values(tmp_path):
 def test_control_character_is_preserved_in_fixture():
     rows = read_rows(SAMPLE_CSV)
     assert "\x7f" in rows[7].description
+
+
+def test_unreadable_file_raises_input_error(tmp_path):
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses file permissions")
+    path = write(tmp_path / "secret.csv", "ean,description\n5901234123457,Tau vuong\n")
+    os.chmod(path, 0o000)
+    try:
+        with pytest.raises(InputError) as excinfo:
+            read_rows(path)
+        assert "cannot read" in str(excinfo.value)
+    finally:
+        os.chmod(path, 0o600)
