@@ -1,8 +1,8 @@
 """Command line interface for the skuv SKU list validator.
 
-Pipeline: read (readers.read_rows) -> validate (validators.validate_row) ->
-write (report.write_reports, M4). The exit-code contract is fixed here:
-0 = no invalid rows, 1 = at least one invalid row, 2 = usage/input error.
+Pipeline: read (readers) -> validate (validators) -> write (report).
+Exit-code contract: 0 = no invalid rows, 1 = at least one invalid row,
+2 = usage/input/output error (message on stderr, no reports written).
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .readers import InputError, read_rows
+from .report import write_reports
 from .validators import find_duplicates, validate_row
 
 DEFAULT_OUTDIR = "out"
@@ -50,11 +51,13 @@ def main(argv: list[str] | None = None) -> int:
     duplicates = find_duplicates(rows)
     results = [validate_row(row, duplicates) for row in rows]
 
-    # TODO(M4): write reports to args.outdir.
-    Path(args.outdir).mkdir(parents=True, exist_ok=True)
+    try:
+        write_reports(results, args.outdir)
+    except OSError as exc:
+        print("skuv: error: cannot write reports to " + str(args.outdir) + ": " + str(exc), file=sys.stderr)
+        return 2
 
-    invalid = sum(1 for result in results if not result.is_valid)
-    return 1 if invalid else 0
+    return 1 if any(not result.is_valid for result in results) else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

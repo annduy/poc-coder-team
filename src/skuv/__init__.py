@@ -5,7 +5,9 @@ Validates SKU lists (ean, description, optional price) delivered as .csv or
 """
 
 from .readers import InputError, RawRow, read_rows
+from .report import write_reports
 from .validators import (
+    ERROR_CODES,
     ISSUE_CODES,
     Issue,
     RowResult,
@@ -20,6 +22,7 @@ from .validators import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "ERROR_CODES",
     "ISSUE_CODES",
     "InputError",
     "Issue",
@@ -34,6 +37,7 @@ __all__ = [
     "validate_description",
     "validate_ean",
     "validate_row",
+    "write_reports",
 ]
 
 
