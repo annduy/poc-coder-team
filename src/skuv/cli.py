@@ -1,7 +1,7 @@
 """Command line interface for the skuv SKU list validator.
 
-M1 stage: the CLI contract only. The read -> validate -> write pipeline is a
-stub here; readers (M2), validators (M3) and the report writer (M4) follow.
+Pipeline: read -> validate -> write (readers land in M2, validators in M3 and
+the report writer in M4; the stages below are wired as they arrive).
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+from .readers import InputError, read_rows
 
 DEFAULT_OUTDIR = "out"
 
@@ -35,15 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the validator. Returns the process exit code (0, 1 or 2)."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    args = build_parser().parse_args(argv)
 
-    path = Path(args.input)
-    if not path.is_file():
-        print("skuv: error: input file not found: " + str(path), file=sys.stderr)
+    try:
+        rows = read_rows(args.input)
+    except InputError as exc:
+        print("skuv: error: " + str(exc), file=sys.stderr)
         return 2
 
-    # TODO(M2): read rows. TODO(M3): validate rows. TODO(M4): write reports.
+    # TODO(M3): validate rows. TODO(M4): write reports.
+    print("read " + str(len(rows)) + " row(s) from " + str(args.input))
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
     return 0
 
