@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from .readers import InputError, read_rows
 from .report import write_reports

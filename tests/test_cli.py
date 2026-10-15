@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from skuv.cli import main
 
@@ -52,6 +53,9 @@ EXPECTED_PROBLEMS = [
     "DESC_CTRL",
     "PRICE_BAD",
 ]
+
+#: Physical source row of each errors.csv data row for the sample fixtures.
+EXPECTED_ERROR_ROWS = ["3", "4", "6", "7", "8", "9", "10"]
 
 
 def read_csv_rows(path: Path):
@@ -133,7 +137,7 @@ def test_all_valid_input_exits_zero(tmp_path):
         ["ean", "description", "price"],
         ["5901234123457", "Tau vuong Thom Binh", "120000"],
     ]
-    assert read_csv_rows(outdir / "errors.csv") == [["ean", "description", "price", "problems"]]
+    assert read_csv_rows(outdir / "errors.csv") == [["row", "ean", "description", "price", "problems"]]
     assert (outdir / "summary.txt").read_text(encoding="utf-8") == SIMPLE_SUMMARY
 
 
@@ -151,12 +155,13 @@ def test_fixture_end_to_end(fixture, tmp_path):
     assert (outdir / "summary.txt").read_text(encoding="utf-8") == EXPECTED_SUMMARY
 
     error_rows = read_csv_rows(outdir / "errors.csv")
-    assert error_rows[0] == ["ean", "description", "price", "problems"]
+    assert error_rows[0] == ["row", "ean", "description", "price", "problems"]
     assert len(error_rows) == 8
-    assert [row[3] for row in error_rows[1:]] == EXPECTED_PROBLEMS
-    assert error_rows[3][1] == "duplicate row"
-    assert error_rows[4][2] == "45000"
-    assert error_rows[7][0] == "9780201379624"
+    assert [row[0] for row in error_rows[1:]] == EXPECTED_ERROR_ROWS
+    assert [row[4] for row in error_rows[1:]] == EXPECTED_PROBLEMS
+    assert error_rows[3][2] == "duplicate row"
+    assert error_rows[4][3] == "45000"
+    assert error_rows[7][1] == "9780201379624"
 
 
 def test_outdir_is_created_and_overwritten_silently(tmp_path):
@@ -244,3 +249,111 @@ def test_output_csv_is_utf8_sig_and_round_trips_diacritics(tmp_path):
     assert rows[1] == ["5901234123457", description, "120000"]
 
     assert not (outdir / "summary.txt").read_bytes().startswith(b"\xef\xbb\xbf")
+
+
+# ------------------------------------------- hardening 1: source row (issue #4, R1)
+
+DUPLICATE_HEADER_CSV = (
+    "ean,description,ean,price\n"
+    "5901234123457,Tau vuong Thom Binh,5901234123457,120000\n"
+)
+
+
+def write_xlsx(tmp_path: Path, header, rows, name: str = "list.xlsx") -> Path:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(list(header))
+    for values in rows:
+        worksheet.append(list(values))
+    path = tmp_path / name
+    workbook.save(path)
+    return path
+
+
+def test_errors_csv_reports_the_source_row_number(tmp_path):
+    source = write_csv(
+        tmp_path,
+        "ean,description,price\n"
+        "5901234123457,Tau vuong Thom Binh,120000\n"
+        "5901234123458,Sua tam,99000\n"
+        "ABC123,Sua rua mat,89000\n",
+    )
+    outdir = tmp_path / "out"
+    assert main([str(source), "-o", str(outdir)]) == 1
+    assert read_csv_rows(outdir / "errors.csv") == [
+        ["row", "ean", "description", "price", "problems"],
+        ["3", "5901234123458", "Sua tam", "99000", "EAN_CHECKSUM"],
+        ["4", "ABC123", "Sua rua mat", "89000", "EAN_FORMAT"],
+    ]
+
+
+def test_errors_csv_row_is_the_physical_line_of_a_multiline_record(tmp_path):
+    source = write_csv(
+        tmp_path,
+        "ean,description,price\n"
+        '5901234123457,"Tau vuong\nThom Binh",120000\n'
+        "ABC123,Sua rua mat,89000\n",
+    )
+    outdir = tmp_path / "out"
+    assert main([str(source), "-o", str(outdir)]) == 1
+    error_rows = read_csv_rows(outdir / "errors.csv")
+    assert [row[0] for row in error_rows[1:]] == ["3", "4"]
+    assert error_rows[1][4] == "DESC_CTRL"
+
+
+def test_errors_csv_row_column_matches_between_csv_and_xlsx(tmp_path):
+    rows = [
+        ["5901234123457", "Tau vuong Thom Binh", "120000"],
+        ["5901234123458", "Sua tam", "99000"],
+        ["ABC123", "Sua rua mat", "89000"],
+    ]
+    csv_path = write_csv(
+        tmp_path,
+        "ean,description,price\n" + "\n".join(",".join(r) for r in rows) + "\n",
+    )
+    xlsx_path = write_xlsx(tmp_path, ["ean", "description", "price"], rows)
+    csv_out, xlsx_out = tmp_path / "o_csv", tmp_path / "o_xlsx"
+    assert main([str(csv_path), "-o", str(csv_out)]) == 1
+    assert main([str(xlsx_path), "-o", str(xlsx_out)]) == 1
+    error_rows = read_csv_rows(csv_out / "errors.csv")
+    assert error_rows == read_csv_rows(xlsx_out / "errors.csv")
+    assert [row[0] for row in error_rows[1:]] == ["3", "4"]
+
+
+# --------------------------------------- hardening 1: duplicate header (issue #4, R2)
+
+def test_duplicate_known_header_csv_exits_two(tmp_path, capsys):
+    source = write_csv(tmp_path, DUPLICATE_HEADER_CSV)
+    outdir = tmp_path / "out"
+    assert main([str(source), "-o", str(outdir)]) == 2
+    err = capsys.readouterr().err
+    assert "skuv: error:" in err
+    assert "ean" in err
+    assert not outdir.exists()
+
+
+def test_duplicate_known_header_message_is_identical_for_csv_and_xlsx(tmp_path, capsys):
+    csv_path = write_csv(tmp_path, DUPLICATE_HEADER_CSV, name="dupe.csv")
+    xlsx_path = write_xlsx(
+        tmp_path,
+        ["ean", "description", "ean", "price"],
+        [["5901234123457", "Tau vuong Thom Binh", "5901234123457", "120000"]],
+        name="dupe.xlsx",
+    )
+    assert main([str(csv_path), "-o", str(tmp_path / "o_csv")]) == 2
+    csv_message = capsys.readouterr().err
+    assert main([str(xlsx_path), "-o", str(tmp_path / "o_xlsx")]) == 2
+    xlsx_message = capsys.readouterr().err
+    assert csv_message == xlsx_message
+    assert "ean" in csv_message
+    assert not (tmp_path / "o_csv").exists()
+    assert not (tmp_path / "o_xlsx").exists()
+
+
+def test_duplicate_known_header_in_subprocess_exits_two(tmp_path):
+    source = write_csv(tmp_path, DUPLICATE_HEADER_CSV, name="dup_sub.csv")
+    proc = run_module([str(source), "-o", str(tmp_path / "out")], tmp_path)
+    assert proc.returncode == 2
+    assert "duplicate" in proc.stderr
+    assert "ean" in proc.stderr
+    assert "Traceback" not in proc.stderr

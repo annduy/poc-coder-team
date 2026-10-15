@@ -2,6 +2,7 @@
 
 Design notes (docs/plan.md, section 2 and defaults A2/A6/A7):
 - header names are matched case-insensitively; extra columns are ignored;
+- a known column repeated in the header is an error (issue #4, R2);
 - numeric spreadsheet cells are normalized to a canonical string (no trailing
   ".0", no exponent, never zero-padded);
 - rows whose known fields are all blank are skipped;
@@ -85,14 +86,28 @@ def _normalize_header(name: object) -> str:
 
 
 def _map_header(header_names: list[object]) -> dict[str, str]:
-    """Map canonical column name -> the header spelling found in the file."""
+    """Map canonical column name -> the header spelling found in the file.
+
+    A known column (ean, description, price) that occurs more than once is
+    rejected: keeping the first occurrence silently would validate a column the
+    author did not mean to point at (issue #4, R2). csv and xlsx both pass
+    through here, so the two formats behave identically.
+    """
     found: dict[str, str] = {}
+    duplicated: list[str] = []
     for name in header_names:
         if name is None:
             continue
         normalized = _normalize_header(name)
-        if normalized in KNOWN_COLUMNS and normalized not in found:
+        if normalized not in KNOWN_COLUMNS:
+            continue
+        if normalized in found:
+            duplicated.append(normalized)
+        else:
             found[normalized] = str(name)
+    if duplicated:
+        # dict.fromkeys dedupes repeated headers while keeping their order.
+        raise InputError("duplicate column(s) in header: " + ", ".join(dict.fromkeys(duplicated)))
     missing = [name for name in REQUIRED_COLUMNS if name not in found]
     if missing:
         raise InputError("missing required column(s): " + ", ".join(missing))
@@ -107,12 +122,15 @@ def _read_csv(path: Path) -> list[tuple[int, dict[str, str]]]:
             if reader.fieldnames is None:
                 raise InputError("input file has no header row")
             mapping = _map_header(list(reader.fieldnames))
-            for lineno, row in enumerate(reader, start=2):
+            for row in reader:
                 values = {}
                 for canonical, original in mapping.items():
                     cell = row.get(original)
                     values[canonical] = "" if cell is None else str(cell)
-                records.append((lineno, values))
+                # csv.reader.line_num is the physical line the record ends on, so
+                # a quoted value spanning several lines reports its last line
+                # (issue #4, R1).
+                records.append((reader.line_num, values))
     except UnicodeDecodeError as exc:
         raise InputError("cannot decode " + str(path) + " as UTF-8: " + str(exc)) from exc
     except csv.Error as exc:
@@ -144,6 +162,8 @@ def _read_xlsx(path: Path) -> list[tuple[int, dict[str, str]]]:
             indexes[canonical] = header.index(original)
 
         records: list[tuple[int, dict[str, str]]] = []
+        # The header is sheet row 1, so the first data row is sheet row 2
+        # (issue #4, R1).
         for lineno, cells in enumerate(rows, start=2):
             values = {}
             for canonical, index in indexes.items():

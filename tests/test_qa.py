@@ -214,8 +214,8 @@ def test_first_occurrence_valid_second_flagged_end_to_end(tmp_path):
     assert main([str(source), "-o", str(outdir)]) == 1
     assert read_csv_rows(outdir / "validated.csv") == [["ean", "description", "price"], [EAN13, "Alpha", "100"]]
     assert read_csv_rows(outdir / "errors.csv") == [
-        ["ean", "description", "price", "problems"],
-        [EAN13, "Beta", "200", "EAN_DUP"],
+        ["row", "ean", "description", "price", "problems"],
+        ["3", EAN13, "Beta", "200", "EAN_DUP"],
     ]
 
 
@@ -402,7 +402,10 @@ def test_xlsx_none_cells_validate_as_empty(tmp_path):
     path = build_xlsx(tmp_path / "none.xlsx", [[EAN13, None, None]])
     outdir = tmp_path / "out"
     assert main([str(path), "-o", str(outdir)]) == 1
-    assert read_csv_rows(outdir / "errors.csv")[1][3] == "DESC_EMPTY"
+    error_rows = read_csv_rows(outdir / "errors.csv")
+    assert error_rows[0] == ["row", "ean", "description", "price", "problems"]
+    assert error_rows[1][0] == "2"
+    assert error_rows[1][4] == "DESC_EMPTY"
 
 
 def test_unknown_extension_is_an_input_error(tmp_path):

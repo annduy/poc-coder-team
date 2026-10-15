@@ -113,3 +113,57 @@ def test_unreadable_file_raises_input_error(tmp_path):
         assert "cannot read" in str(excinfo.value)
     finally:
         os.chmod(path, 0o600)
+
+
+# ------------------------------------------- duplicate headers (issue #4, R2)
+
+def test_duplicate_known_header_raises_input_error(tmp_path):
+    path = write(tmp_path / "dupean.csv", "ean,description,ean\n5901234123457,Tau vuong,5901234123457\n")
+    with pytest.raises(InputError) as excinfo:
+        read_rows(path)
+    assert "ean" in str(excinfo.value)
+
+
+def test_duplicate_known_header_is_case_insensitive(tmp_path):
+    path = write(tmp_path / "dupecase.csv", "EAN,Description,ean,price\n5901234123457,Tau,5901234123457,1\n")
+    with pytest.raises(InputError) as excinfo:
+        read_rows(path)
+    assert "ean" in str(excinfo.value)
+
+
+def test_duplicate_optional_price_header_is_rejected(tmp_path):
+    path = write(tmp_path / "dupprice.csv", "ean,description,price,Price\n5901234123457,Tau,1,1\n")
+    with pytest.raises(InputError) as excinfo:
+        read_rows(path)
+    assert "price" in str(excinfo.value)
+
+
+def test_duplicate_unknown_header_is_ignored(tmp_path):
+    path = write(tmp_path / "dupunknown.csv", "ean,description,Supplier,Supplier\n5901234123457,Tau,ACME,OTHER\n")
+    rows = read_rows(path)
+    assert len(rows) == 1
+    assert rows[0].ean == "5901234123457"
+
+
+def test_duplicate_known_header_rejected_in_xlsx_too(tmp_path):
+    path = tmp_path / "dup.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["ean", "description", "ean"])
+    worksheet.append(["5901234123457", "Tau vuong", "5901234123457"])
+    workbook.save(path)
+    with pytest.raises(InputError) as excinfo:
+        read_rows(path)
+    assert "ean" in str(excinfo.value)
+
+
+# ------------------------------------------- source row numbers (issue #4, R1)
+
+def test_row_number_is_the_physical_line_a_record_ends_on(tmp_path):
+    path = write(
+        tmp_path / "multiline.csv",
+        'ean,description,price\n5901234123457,"Tau vuong\nThom Binh",120000\nABC123,Sua rua mat,89000\n',
+    )
+    rows = read_rows(path)
+    assert [row.lineno for row in rows] == [3, 4]
+    assert rows[0].description == "Tau vuong\nThom Binh"
