@@ -1,13 +1,13 @@
 # Minimal lint configuration for the skuv PoC (issue #4, R3).
 # Only ruff's default rules run: the existing code is correct as written and is
-# deliberately not mass-reformatted, so the two ignores below cover legacy style
-# in test code only.
+# deliberately not mass-reformatted, so the two legacy-style exceptions below are
+# scoped to the test tree instead of being disabled repo-wide.
 
 line-length = 120
 target-version = "py312"
 
-[lint]
-ignore = [
+[lint.per-file-ignores]
+"tests/**" = [
     # Tests assert the subprocess return code explicitly; check=True would raise
     # before the assertion could report it.
     "PLW1510",
