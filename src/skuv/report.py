@@ -12,7 +12,8 @@ ERRORS_FILENAME = "errors.csv"
 SUMMARY_FILENAME = "summary.txt"
 
 VALIDATED_HEADER = ("ean", "description", "price")
-ERRORS_HEADER = ("ean", "description", "price", "problems")
+#: errors.csv leads with the physical source row number (issue #4, R1).
+ERRORS_HEADER = ("row", "ean", "description", "price", "problems")
 
 #: CSV reports carry a BOM so Excel (and VN-locale tools) open them correctly.
 CSV_ENCODING = "utf-8-sig"
@@ -63,6 +64,7 @@ def _write_errors(results, path: Path) -> None:
         raw = result.raw or {}
         rows.append(
             [
+                str(result.lineno),
                 raw.get("ean", ""),
                 raw.get("description", ""),
                 raw.get("price", ""),
